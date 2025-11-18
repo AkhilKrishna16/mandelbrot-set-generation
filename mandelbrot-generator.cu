@@ -4,7 +4,7 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
-#define MAX_ITR 100
+#define MAX_ITR 1000
 #define NUM_THREADS 32 * 32
 #define IMG_W 1920
 #define IMG_H 1080
@@ -30,28 +30,35 @@ __device__ double complexAbsolute(C *c) {
     return sqrt((c->real * c->real) + (c->imag * c->imag));
 }
 
-__device__ int mandelbrot(C *cnst) {
+__device__ float mandelbrot(C *cnst) {
     C z = {0.0, 0.0};
     C zSq;
+    int i;
 
-    for(int i = 0; i < MAX_ITR; i++) {
-        if(complexAbsolute(&z) > 2) {
-            return i;
+    for(i = 0; i < MAX_ITR; i++) {
+        if(z.real * z.real + z.imag*z.imag > 4.0) {
+            break;
         }
 
         complexMultiply(&z, &z, &zSq);
         complexAdd(&zSq, cnst, &z);
     }
+
+    if(i == MAX_ITR) {
+        return MAX_ITR;
+    }
     
-    return MAX_ITR;
+    double mag = sqrt(z.real * z.real + z.imag * z.imag);
+    float smooth = i + 1 - log2f(log2f(mag));
+    return smooth;
 }
 
-__device__ void getColor(int itrs, unsigned char *r, unsigned char *g, unsigned char *b)
+__device__ void getColor(float smooth, unsigned char *r, unsigned char *g, unsigned char *b)
 {
-    float scale = itrs / (float)MAX_ITR;
-    *r = (unsigned char)(255.0f * scale);
-    *g = (unsigned char)(255.0f * scale);
-    *b = (unsigned char)(255.0f * scale);
+    float t = smooth / (float)MAX_ITR;
+    *r = (unsigned char)(9*(1-t)*t*t*t*255);
+    *g = (unsigned char)(15*(1-t)*(1-t)*t*t*255);
+    *b = (unsigned char)(8.5*(1-t)*(1-t)*(1-t)*t*255);
 }
 
 
@@ -63,10 +70,10 @@ __global__ void parallelMandelbrot(unsigned char *dev_image, double REAL_MIN, do
         double real = REAL_MIN + ((double)x * INC_REAL);
         double imag = IMAG_MIN + ((double)y * INC_IMAG);
         C pcNum = {real, imag};
-        int itrs = mandelbrot(&pcNum);
+        float smooth = mandelbrot(&pcNum);
         int pixelIdx = (y * IMG_W + x) * CHANNELS;
         unsigned char r, g, b;
-        getColor(itrs, &r, &g, &b);
+        getColor(smooth, &r, &g, &b);
         dev_image[pixelIdx + 0] = r;    
         dev_image[pixelIdx + 1] = g;
         dev_image[pixelIdx + 2] = b;
@@ -90,12 +97,12 @@ int main() {
     }
 
     unsigned char *dev_image;
-    cudaMalloc(&dev_image, img_bytes    );
+    cudaMalloc(&dev_image, img_bytes);
     dim3 block_dim(32, 32, 1);
     dim3 grid_dim(ceil((float)IMG_W / 32), ceil((float)IMG_H / 32), 1);
     parallelMandelbrot<<<grid_dim, block_dim>>>(dev_image, REAL_MIN, IMAG_MIN, INC_REAL, INC_IMAG);
     cudaDeviceSynchronize();
-    cudaMemcpy(host_image, dev_image, IMG_W * IMG_H * CHANNELS, cudaMemcpyDeviceToHost);
+    cudaMemcpy(host_image, dev_image, IMG_W * IMG_H * CHANNELS * sizeof(unsigned char), cudaMemcpyDeviceToHost);
     if(!stbi_write_png("mandelbrot_set.png", IMG_W, IMG_H, CHANNELS, host_image, IMG_W * CHANNELS)) {
         fprintf(stderr, "Failed to write PNG\n");
         return 1;
