@@ -11,6 +11,8 @@
 #define CHANNELS 3
 #define NUM_BLOCKS (int)ceil(((double)IMG_W * IMG_H) / NUM_THREADS)
 
+// added changes
+
 typedef struct complexNumber {
     double real;
     double imag;
