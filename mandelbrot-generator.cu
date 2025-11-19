@@ -3,6 +3,7 @@
 #include <math.h>
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
+#include <time.h>
 
 #define MAX_ITR 1000
 #define NUM_THREADS 32 * 32
@@ -102,8 +103,12 @@ int main() {
     cudaMalloc(&dev_image, img_bytes);
     dim3 block_dim(32, 32, 1);
     dim3 grid_dim(ceil((float)IMG_W / 32), ceil((float)IMG_H / 32), 1);
+    clock_t start_time = clock();
     parallelMandelbrot<<<grid_dim, block_dim>>>(dev_image, REAL_MIN, IMAG_MIN, INC_REAL, INC_IMAG);
     cudaDeviceSynchronize();
+    clock_t end_time = clock();
+    double time_taken = (double)(end_time - start_time) / CLOCKS_PER_SEC;
+    printf("Time taken: %f seconds\n", time_taken);
     cudaMemcpy(host_image, dev_image, IMG_W * IMG_H * CHANNELS * sizeof(unsigned char), cudaMemcpyDeviceToHost);
     if(!stbi_write_png("mandelbrot_set.png", IMG_W, IMG_H, CHANNELS, host_image, IMG_W * CHANNELS)) {
         fprintf(stderr, "Failed to write PNG\n");
@@ -112,5 +117,4 @@ int main() {
 
     free(host_image);
     cudaFree(dev_image);
-    printf("Image(s) written!\n");
 }
